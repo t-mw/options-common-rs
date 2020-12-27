@@ -1,5 +1,5 @@
 [package]
-name = "options-common-rs"
+name = "options-common"
 version = "0.1.0"
 description = "Utilities for working with financial options"
 authors = ["Tobias Mansfield-Williams <contact@tmwhere.com>"]
