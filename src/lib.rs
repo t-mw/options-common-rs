@@ -15,7 +15,7 @@ pub struct OptionPosition {
     pub strike_price: Rational64,
     pub expiration_date: ExpirationDate,
     pub is_long: bool,
-    pub unit_cost: Option<Rational64>, // +ve for long, -ve for short
+    pub unit_cost: Option<Rational64>, // -ve for long, +ve for short
     pub unit_net_liq: Option<Rational64>, // -ve for long, +ve for short
     pub delta: Option<NotNan<f64>>,
     pub quantity: i64,
