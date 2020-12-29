@@ -3,22 +3,38 @@ use num_rational::Rational64;
 use num_traits::{Signed, ToPrimitive, Zero};
 use ordered_float::NotNan;
 
+use std::convert::TryInto;
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OptionPosition {
-    pub symbol: String, // the symbol for the option itself
+    /// The symbol of the option itself.
+    pub symbol: String,
+
+    /// The symbol of the instrument that the option is a derivative of.
     pub underlying_symbol: String,
+
     pub option_type: OptionType,
     pub strike_price: Rational64,
     pub expiration_date: ExpirationDate,
     pub is_long: bool,
-    pub unit_cost: Option<Rational64>, // -ve for long, +ve for short
-    pub unit_net_liq: Option<Rational64>, // -ve for long, +ve for short
-    pub delta: Option<NotNan<f64>>,
-    pub quantity: i64,
+
+    /// The cost of this position per contract. If the position is long, this should be negative.
+    pub unit_cost: Option<Rational64>,
+
+    /// The net liquidity of this position per contract. If the position is long, this should be negative.
+    pub unit_net_liq: Option<Rational64>,
+
+    /// The delta of this position per contract.
+    pub unit_delta: Option<NotNan<f64>>,
+
+    /// The number of contracts in this position.
+    pub quantity: u64,
+
+    /// The lot size per contract. Defaults to 100 if not defined.
+    pub lot_size: Option<u64>,
 }
 
 impl OptionPosition {
@@ -32,38 +48,44 @@ impl OptionPosition {
     }
 
     pub fn signed_quantity(&self) -> i64 {
+        let q: i64 = self.quantity.try_into().unwrap();
         if self.is_long {
-            self.quantity
+            q
         } else {
-            -self.quantity
+            -q
         }
     }
 
-    fn unit_debit_net_liq_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
-        let value = match self.option_type {
+    pub fn cost(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity.try_into().unwrap();
+        self.unit_cost.map(|x| x * q)
+    }
+
+    pub fn net_liq(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity.try_into().unwrap();
+        self.unit_net_liq.map(|x| x * q)
+    }
+
+    pub fn delta(&self) -> Option<NotNan<f64>> {
+        self.unit_delta.map(|x| x * self.quantity as f64)
+    }
+
+    pub fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
+        let lot_size: i64 = self.lot_size.unwrap_or(100).try_into().unwrap();
+
+        let unit_expiry_net_liq = match self.option_type {
             OptionType::Call => underlying_price - self.strike_price,
             OptionType::Put => self.strike_price - underlying_price,
-        };
-
-        value.max(Rational64::zero()) * 100
-    }
-
-    fn unit_net_liq_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
-        let debit_net_liq = self.unit_debit_net_liq_at_expiry(underlying_price);
-        if self.is_long {
-            debit_net_liq
-        } else {
-            -debit_net_liq
         }
-    }
+        .max(Rational64::zero())
+            * if self.is_long { lot_size } else { -lot_size };
 
-    fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
-        (self.unit_cost.expect("Undefined cost") + self.unit_net_liq_at_expiry(underlying_price))
-            * self.quantity as i64
+        let q: i64 = self.quantity.try_into().unwrap();
+        (self.unit_cost.expect("Undefined cost") + unit_expiry_net_liq) * q
     }
 
     #[cfg(test)]
-    pub fn mock(option_type: OptionType, strike_price: i64, cost: i64, quantity: i64) -> Self {
+    pub fn mock(option_type: OptionType, strike_price: i64, cost: i64, quantity: u64) -> Self {
         let is_long = cost < 0;
         OptionPosition {
             symbol: "OPTION".to_string(),
@@ -74,8 +96,9 @@ impl OptionPosition {
             is_long,
             unit_cost: Some(Rational64::from_integer(cost)),
             unit_net_liq: None,
-            delta: None,
+            unit_delta: None,
             quantity,
+            lot_size: None,
         }
     }
 }
