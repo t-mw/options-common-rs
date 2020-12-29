@@ -278,9 +278,9 @@ pub struct Breakeven {
 }
 
 // options should be sorted by strike price
-pub fn calculate_breakevens_for_strategy(options: &[OptionPosition]) -> Option<StrategyBreakevens> {
+pub fn calculate_breakevens_for_strategy(options: &[OptionPosition]) -> StrategyBreakevens {
     if options.is_empty() {
-        return None;
+        return StrategyBreakevens { breakevens: vec![] };
     }
 
     let max_strike_price = options
@@ -334,7 +334,7 @@ pub fn calculate_breakevens_for_strategy(options: &[OptionPosition]) -> Option<S
         prev_profit = profit;
     }
 
-    Some(StrategyBreakevens { breakevens })
+    StrategyBreakevens { breakevens }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -373,11 +373,12 @@ impl ProfitBound {
     }
 }
 
-pub fn calculate_profit_bounds_for_strategy(
-    options: &[OptionPosition],
-) -> Option<StrategyProfitBounds> {
+pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> StrategyProfitBounds {
     if options.is_empty() {
-        return None;
+        return StrategyProfitBounds {
+            max_loss: None,
+            max_profit: None,
+        };
     }
 
     let mut min_gradient: i64 = 0;
@@ -463,7 +464,7 @@ pub fn calculate_profit_bounds_for_strategy(
         max_profit_at_strike
     };
 
-    Some(StrategyProfitBounds {
+    StrategyProfitBounds {
         max_loss: Some(max_loss).filter(|b| {
             let finite = b.finite_value();
             finite.is_none() || finite.filter(|v| v.is_negative()).is_some()
@@ -472,7 +473,7 @@ pub fn calculate_profit_bounds_for_strategy(
             let finite = b.finite_value();
             finite.is_none() || finite.filter(|v| v.is_positive()).is_some()
         }),
-    })
+    }
 }
 
 pub trait ExpirationImpliedVolatilityProvider {
@@ -639,9 +640,8 @@ mod tests {
 
         let breakevens = calculate_breakevens_for_strategy(&options);
 
-        assert!(breakevens.is_some());
         assert_eq!(
-            breakevens.unwrap(),
+            breakevens,
             StrategyBreakevens {
                 breakevens: vec![
                     Breakeven {
@@ -666,9 +666,8 @@ mod tests {
 
         let breakevens = calculate_breakevens_for_strategy(&options);
 
-        assert!(breakevens.is_some());
         assert_eq!(
-            breakevens.unwrap(),
+            breakevens,
             StrategyBreakevens {
                 breakevens: vec![Breakeven {
                     price: Rational64::new(2629, 100),
@@ -687,9 +686,8 @@ mod tests {
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
-        assert!(profit_bounds.is_some());
         assert_eq!(
-            profit_bounds.unwrap(),
+            profit_bounds,
             StrategyProfitBounds {
                 max_loss: Some(ProfitBound::Infinite),
                 max_profit: Some(ProfitBound::Finite {
@@ -709,9 +707,8 @@ mod tests {
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
-        assert!(profit_bounds.is_some());
         assert_eq!(
-            profit_bounds.unwrap(),
+            profit_bounds,
             StrategyProfitBounds {
                 max_loss: Some(ProfitBound::Finite {
                     value: Rational64::from_integer(-37 - 74),
@@ -731,9 +728,8 @@ mod tests {
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
-        assert!(profit_bounds.is_some());
         assert_eq!(
-            profit_bounds.unwrap(),
+            profit_bounds,
             StrategyProfitBounds {
                 max_loss: Some(ProfitBound::Infinite),
                 max_profit: Some(ProfitBound::Finite {
@@ -753,12 +749,10 @@ mod tests {
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
-        assert!(profit_bounds.is_some());
-
         let max_loss = 305 - 2 * 217 - 500;
         let max_profit = max_loss + 1500;
         assert_eq!(
-            profit_bounds.unwrap(),
+            profit_bounds,
             StrategyProfitBounds {
                 max_loss: Some(ProfitBound::Finite {
                     value: Rational64::from_integer(max_loss),
@@ -804,7 +798,7 @@ mod tests {
             OptionPosition::mock(OptionType::Call, 85, 456, 2),
         ];
 
-        let breakevens = calculate_breakevens_for_strategy(&option_positions).unwrap();
+        let breakevens = calculate_breakevens_for_strategy(&option_positions);
 
         assert_eq!(
             breakevens,
@@ -841,7 +835,7 @@ mod tests {
             }
         }
 
-        let profit_bounds = calculate_profit_bounds_for_strategy(&option_positions).unwrap();
+        let profit_bounds = calculate_profit_bounds_for_strategy(&option_positions);
 
         assert_eq!(
             profit_bounds,
