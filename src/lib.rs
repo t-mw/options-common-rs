@@ -34,10 +34,10 @@ pub struct OptionPosition {
     pub unit_delta: Option<NotNan<f64>>,
 
     /// The number of contracts in this position.
-    pub quantity: u64,
+    pub quantity: usize,
 
     /// The lot size per contract. Defaults to 100 if not defined.
-    pub lot_size: Option<u64>,
+    pub lot_size: Option<usize>,
 }
 
 impl OptionPosition {
