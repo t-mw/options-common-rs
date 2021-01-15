@@ -107,7 +107,7 @@ impl OptionPosition {
     }
 
     #[cfg(test)]
-    pub fn mock(option_type: OptionType, strike_price: i64, cost: i64, quantity: u64) -> Self {
+    pub fn mock(option_type: OptionType, strike_price: i64, cost: i64, quantity: usize) -> Self {
         let is_long = cost < 0;
         OptionPosition {
             symbol: "OPTION".to_string(),
@@ -117,7 +117,8 @@ impl OptionPosition {
             expiration_date: Default::default(),
             is_long,
             unit_cost: Some(Rational64::from_integer(cost)),
-            unit_net_liq: None,
+            unit_bid_price: None,
+            unit_ask_price: None,
             unit_delta: None,
             quantity,
             lot_size: None,
