@@ -24,10 +24,10 @@ pub struct OptionPosition {
     /// The original cost per contract in this position. If the position is long, this should be negative.
     pub unit_cost: Option<Rational64>,
 
-    /// The current bid price per contract in this position. If the position is long, this should be negative.
+    /// The current bid price per contract in this position. If the position is long, this should be positive.
     pub unit_bid_price: Option<Rational64>,
 
-    /// The current ask price per contract in this position. If the position is long, this should be negative.
+    /// The current ask price per contract in this position. If the position is long, this should be positive.
     pub unit_ask_price: Option<Rational64>,
 
     /// The delta per contract in this position.
