@@ -701,6 +701,45 @@ mod tests {
     }
 
     #[test]
+    fn test_calculate_profit_for_long_call() {
+        let options = [OptionPosition::mock(OptionType::Call, 20, -37, 1)];
+
+        let profit_bounds = calculate_profit_bounds_for_strategy(&options);
+
+        assert_eq!(
+            profit_bounds,
+            StrategyProfitBounds {
+                max_loss: Some(ProfitBound::Finite {
+                    value: Rational64::from_integer(-37),
+                    price: Rational64::from_integer(20)
+                }),
+                max_profit: Some(ProfitBound::Infinite)
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_profit_for_long_put() {
+        let options = [OptionPosition::mock(OptionType::Put, 20, -37, 1)];
+
+        let profit_bounds = calculate_profit_bounds_for_strategy(&options);
+
+        assert_eq!(
+            profit_bounds,
+            StrategyProfitBounds {
+                max_loss: Some(ProfitBound::Finite {
+                    value: Rational64::from_integer(-37),
+                    price: Rational64::from_integer(20)
+                }),
+                max_profit: Some(ProfitBound::Finite {
+                    value: Rational64::from_integer(2000 - 37),
+                    price: Rational64::zero()
+                })
+            }
+        );
+    }
+
+    #[test]
     fn test_calculate_profit_for_short_strangle() {
         let options = [
             OptionPosition::mock(OptionType::Put, 20, 37, 1),
