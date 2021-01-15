@@ -21,13 +21,16 @@ pub struct OptionPosition {
     pub expiration_date: ExpirationDate,
     pub is_long: bool,
 
-    /// The cost of this position per contract. If the position is long, this should be negative.
+    /// The original cost per contract in this position. If the position is long, this should be negative.
     pub unit_cost: Option<Rational64>,
 
-    /// The net liquidity of this position per contract. If the position is long, this should be negative.
-    pub unit_net_liq: Option<Rational64>,
+    /// The current bid price per contract in this position. If the position is long, this should be negative.
+    pub unit_bid_price: Option<Rational64>,
 
-    /// The delta of this position per contract.
+    /// The current ask price per contract in this position. If the position is long, this should be negative.
+    pub unit_ask_price: Option<Rational64>,
+
+    /// The delta per contract in this position.
     pub unit_delta: Option<NotNan<f64>>,
 
     /// The number of contracts in this position.
@@ -63,7 +66,26 @@ impl OptionPosition {
 
     pub fn net_liq(&self) -> Option<Rational64> {
         let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_net_liq.map(|x| x * q)
+        self.unit_mid_price().map(|x| x * q)
+    }
+
+    pub fn bid_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity.try_into().unwrap();
+        self.unit_bid_price.map(|x| x * q)
+    }
+
+    pub fn ask_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity.try_into().unwrap();
+        self.unit_ask_price.map(|x| x * q)
+    }
+
+    pub fn mid_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity.try_into().unwrap();
+        self.unit_mid_price().map(|x| x * q)
+    }
+
+    pub fn unit_mid_price(&self) -> Option<Rational64> {
+        Some((self.unit_bid_price? + self.unit_ask_price?) / 2)
     }
 
     pub fn delta(&self) -> Option<NotNan<f64>> {
