@@ -126,9 +126,6 @@ impl OptionPosition {
     }
 }
 
-const MAX_DECIMAL_POINTS: i64 = 4;
-const DECIMAL_MULTIPLIER: i64 = 10_000; // 10^MAX_DECIMAL_POINTS
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Decimal(pub Rational64);
 
@@ -139,13 +136,13 @@ impl Decimal {
 }
 
 #[derive(Debug, Clone)]
-struct PriceFromStrError(String);
+struct DecimalFromStrError(String);
 
-impl Error for PriceFromStrError {}
+impl Error for DecimalFromStrError {}
 
-impl fmt::Display for PriceFromStrError {
+impl fmt::Display for DecimalFromStrError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "'{}' could not be parsed as price", self.0)
+        write!(f, "'{}' could not be parsed as decimal", self.0)
     }
 }
 
@@ -153,61 +150,37 @@ impl FromStr for Decimal {
     type Err = Box<dyn Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let is_negative = s.starts_with('-');
+        let without_commas = s.trim().replace(',', "");
+        let has_negative_sign = without_commas.starts_with('-');
+        let without_sign = without_commas.replace('-', "").replace('+', "");
+        let decimal_idx = without_sign.chars().position(|c| c == '.');
+        let without_decimal = without_sign.replace('.', "");
 
-        let mut components = s.split('.');
-        let integer = components
-            .next()
-            .map(|s| i64::from_str(&s.replace(',', "")))
-            .transpose()?
-            .ok_or_else(|| PriceFromStrError(s.to_string()))?
-            .abs();
-
-        let decimal = components
-            .next()
-            .map(|s| {
-                let padded = format!("{:0<4}", s);
-                if padded.len() != MAX_DECIMAL_POINTS as usize {
-                    let boxed: Box<dyn Error> = PriceFromStrError(s.to_string()).into();
-                    return Err(boxed);
-                }
-
-                i64::from_str(&padded).map_err(|e| {
-                    let boxed: Box<dyn Error> = e.into();
-                    boxed
-                })
-            })
-            .transpose()?
-            .unwrap_or(0);
-
-        let mut numerator = integer * DECIMAL_MULTIPLIER + decimal;
-        if is_negative {
+        let mut numerator =
+            i64::from_str(&without_decimal).map_err(|_| DecimalFromStrError(s.to_string()))?;
+        if has_negative_sign {
             numerator *= -1;
         }
 
-        let denominator = DECIMAL_MULTIPLIER;
-
+        let denominator = if let Some(decimal_idx) = decimal_idx {
+            10i64.pow(
+                without_decimal
+                    .len()
+                    .checked_sub(decimal_idx)
+                    .ok_or_else(|| DecimalFromStrError(s.to_string()))?
+                    .try_into()
+                    .unwrap(),
+            )
+        } else {
+            1
+        };
         Ok(Decimal(Rational64::new(numerator, denominator)))
     }
 }
 
 impl fmt::Display for Decimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let integer = self.0.to_integer().abs();
-
-        let decimal = format!(
-            "{:0>4}",
-            (self.0.fract() * DECIMAL_MULTIPLIER).to_integer().abs()
-        );
-        let decimal_trimmed = decimal.trim_end_matches('0');
-
-        write!(
-            f,
-            "{}{}.{}",
-            if self.0.is_negative() { "-" } else { "" },
-            integer,
-            decimal_trimmed
-        )
+        write!(f, "{}", self.0.to_f64().unwrap())
     }
 }
 
@@ -615,6 +588,55 @@ mod tests {
             Decimal::from_str("12,345.4321").unwrap(),
             Decimal(Rational64::new(123454321, 10000))
         );
+        assert_eq!(
+            Decimal::from_str("+2.1").unwrap(),
+            Decimal(Rational64::new(21, 10))
+        );
+        assert_eq!(
+            Decimal::from_str("2.").unwrap(),
+            Decimal(Rational64::new(2, 1))
+        );
+        assert_eq!(
+            Decimal::from_str("2").unwrap(),
+            Decimal(Rational64::new(2, 1))
+        );
+    }
+
+    #[test]
+    fn test_decimal_to_string() {
+        assert_eq!(
+            Decimal(Rational64::new(3, 10)).to_string(),
+            "0.3".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(-3, 10)).to_string(),
+            "-0.3".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(912, 100)).to_string(),
+            "9.12".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(-912, 100)).to_string(),
+            "-9.12".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(23012, 1000)).to_string(),
+            "23.012".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(10001, 10000)).to_string(),
+            "1.0001".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(123454321, 10000)).to_string(),
+            "12345.4321".to_string()
+        );
+        assert_eq!(
+            Decimal(Rational64::new(21, 10)).to_string(),
+            "2.1".to_string()
+        );
+        assert_eq!(Decimal(Rational64::new(2, 1)).to_string(), "2".to_string());
     }
 
     #[test]
