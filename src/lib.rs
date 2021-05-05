@@ -190,7 +190,7 @@ impl Default for Decimal {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ExpirationDate(pub NaiveDate);
 
 impl ExpirationDate {
