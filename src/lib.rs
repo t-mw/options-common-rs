@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
-#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OptionPosition {
     /// The symbol of the option itself.
@@ -249,7 +248,6 @@ impl Default for OptionType {
     }
 }
 
-#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategyBreakevens {
     // breakevens sorted with ascending price
@@ -284,7 +282,6 @@ impl StrategyBreakevens {
     }
 }
 
-#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Breakeven {
     pub price: Rational64,
@@ -352,7 +349,6 @@ pub fn calculate_breakevens_for_strategy(options: &[OptionPosition]) -> Strategy
     StrategyBreakevens { breakevens }
 }
 
-#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StrategyProfitBounds {
     pub max_loss: Option<ProfitBound>,
