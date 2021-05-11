@@ -33,6 +33,12 @@ pub struct OptionPosition {
     /// The delta per contract in this position.
     pub unit_delta: Option<NotNan<f64>>,
 
+    /// The vega per contract in this position.
+    pub unit_vega: Option<NotNan<f64>>,
+
+    /// The theta per contract in this position.
+    pub unit_theta: Option<NotNan<f64>>,
+
     /// The number of contracts in this position.
     pub quantity: usize,
 
@@ -92,6 +98,14 @@ impl OptionPosition {
         self.unit_delta.map(|x| x * self.quantity as f64)
     }
 
+    pub fn vega(&self) -> Option<NotNan<f64>> {
+        self.unit_vega.map(|x| x * self.quantity as f64)
+    }
+
+    pub fn theta(&self) -> Option<NotNan<f64>> {
+        self.unit_theta.map(|x| x * self.quantity as f64)
+    }
+
     pub fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
         let lot_size: i64 = self.lot_size.unwrap_or(100).try_into().unwrap();
 
@@ -120,6 +134,8 @@ impl OptionPosition {
             unit_bid_price: None,
             unit_ask_price: None,
             unit_delta: None,
+            unit_vega: None,
+            unit_theta: None,
             quantity,
             lot_size: None,
         }
