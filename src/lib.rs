@@ -926,7 +926,7 @@ mod tests {
 
         fn expiration_date() -> ExpirationDate {
             ExpirationDate(NaiveDate::from_ymd(2020, 10, 16))
-        };
+        }
 
         struct IVProvider;
         impl ExpirationImpliedVolatilityProvider for IVProvider {
