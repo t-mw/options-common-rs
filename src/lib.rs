@@ -415,9 +415,8 @@ impl FromStr for Decimal {
                 without_decimal
                     .len()
                     .checked_sub(decimal_idx)
-                    .ok_or_else(|| DecimalFromStrError(s.to_string()))?
-                    .try_into()
-                    .unwrap(),
+                    .and_then(|d| TryInto::<u32>::try_into(d).ok())
+                    .ok_or_else(|| DecimalFromStrError(s.to_string()))?,
             )
         } else {
             1
