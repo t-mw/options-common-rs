@@ -11,6 +11,7 @@ edition = "2018"
 
 [dependencies]
 chrono = "0.4"
+enum_dispatch = "0.3"
 num-rational = "0.3"
 num-traits = "0.2"
 ordered-float = "2.0"

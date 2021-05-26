@@ -1,4 +1,5 @@
 use chrono::{DateTime, Duration, NaiveDate, Utc};
+use enum_dispatch::enum_dispatch;
 use num_rational::Rational64;
 use num_traits::{Signed, ToPrimitive, Zero};
 use ordered_float::NotNan;
@@ -8,6 +9,128 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
+#[enum_dispatch]
+pub enum Position {
+    OptionPosition,
+    SharePosition,
+}
+
+/// Defines methods that are shared between option and share positions.
+#[enum_dispatch(Position)]
+pub trait GenericPosition {
+    /// For an option position, the symbol of the option itself. For a share position, equal to [`Self::underlying_symbol()`].
+    fn symbol(&self) -> &str;
+
+    /// For an option position, the symbol of the instrument that the option is a derivative of.
+    /// For a share position, the symbol of the stock.
+    fn underlying_symbol(&self) -> &str;
+
+    /// Whether the position is long or short the underlying.
+    fn is_long(&self) -> bool;
+
+    /// The original cost per option contract or share in this position. If the position is long, this should be negative.
+    fn unit_cost(&self) -> Option<Rational64>;
+
+    /// The current bid price per option contract or share in this position. If the position is long, this should be positive.
+    fn unit_bid_price(&self) -> Option<Rational64>;
+    fn unit_bid_price_mut(&mut self) -> &mut Option<Rational64>;
+
+    /// The current ask price per option contract or share in this position. If the position is long, this should be positive.
+    fn unit_ask_price(&self) -> Option<Rational64>;
+    fn unit_ask_price_mut(&mut self) -> &mut Option<Rational64>;
+
+    /// The delta per option contract or share in this position.
+    fn unit_delta(&self) -> Option<NotNan<f64>>;
+
+    /// The vega per option contract or share in this position.
+    fn unit_vega(&self) -> Option<NotNan<f64>>;
+
+    /// The theta per option contract in this position.
+    fn unit_theta(&self) -> Option<NotNan<f64>>;
+
+    /// The number of option contracts or shares in this position.
+    fn quantity(&self) -> usize;
+
+    /// Equal to [`Self::quantity()`], but negative if the position is short.
+    fn signed_quantity(&self) -> i64 {
+        let q: i64 = self.quantity().try_into().unwrap();
+        if self.is_long() {
+            q
+        } else {
+            -q
+        }
+    }
+
+    /// The total original cost of all option contracts or shares in this position.
+    fn cost(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity().try_into().unwrap();
+        self.unit_cost().map(|x| x * q)
+    }
+
+    /// The total current bid price for all option contracts or shares in this position.
+    fn bid_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity().try_into().unwrap();
+        self.unit_bid_price().map(|x| x * q)
+    }
+
+    /// The total current ask price for all option contracts or shares in this position.
+    fn ask_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity().try_into().unwrap();
+        self.unit_ask_price().map(|x| x * q)
+    }
+
+    /// The total current mid price for all option contracts or shares in this position.
+    fn mid_price(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity().try_into().unwrap();
+        self.unit_mid_price().map(|x| x * q)
+    }
+
+    /// The current mid price per option contract or share in this position. If the position is long, this will be positive.
+    fn unit_mid_price(&self) -> Option<Rational64> {
+        Some((self.unit_bid_price()? + self.unit_ask_price()?) / 2)
+    }
+
+    /// The total delta for all option contracts or shares in this position.
+    fn delta(&self) -> Option<NotNan<f64>> {
+        self.unit_delta().map(|x| x * self.quantity() as f64)
+    }
+
+    /// The total vega for all option contracts or shares in this position.
+    fn vega(&self) -> Option<NotNan<f64>> {
+        self.unit_vega().map(|x| x * self.quantity() as f64)
+    }
+
+    /// The total theta for all option contracts or shares in this position.
+    fn theta(&self) -> Option<NotNan<f64>> {
+        self.unit_theta().map(|x| x * self.quantity() as f64)
+    }
+
+    /// For an option position, the strike price of the option. For a share position, the strike
+    /// price of the call option with the equivalent cost at the time of purchase i.e. $0.
+    fn equivalent_strike_price(&self) -> Rational64;
+
+    /// For an option position, the type of the option. For a share position, equal to [`OptionType::Call`].
+    fn equivalent_option_type(&self) -> OptionType;
+
+    /// For an option position, the number of units of the underlying per option contract. For a
+    /// share position, equal to 1.
+    fn equivalent_lot_size(&self) -> usize;
+
+    fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
+        let lot_size: i64 = self.equivalent_lot_size().try_into().unwrap();
+
+        let unit_expiry_net_liq = match self.equivalent_option_type() {
+            OptionType::Call => underlying_price - self.equivalent_strike_price(),
+            OptionType::Put => self.equivalent_strike_price() - underlying_price,
+        }
+        .max(Rational64::zero())
+            * if self.is_long() { lot_size } else { -lot_size };
+
+        let q: i64 = self.quantity().try_into().unwrap();
+        (self.unit_cost().expect("Undefined cost") + unit_expiry_net_liq) * q
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OptionPosition {
     /// The symbol of the option itself.
@@ -16,33 +139,40 @@ pub struct OptionPosition {
     /// The symbol of the instrument that the option is a derivative of.
     pub underlying_symbol: String,
 
-    pub option_type: OptionType,
-    pub strike_price: Rational64,
-    pub expiration_date: ExpirationDate,
+    /// Whether the position is long or short the underlying.
     pub is_long: bool,
 
-    /// The original cost per contract in this position. If the position is long, this should be negative.
+    /// The original cost per option contract in this position. If the position is long, this should be negative.
     pub unit_cost: Option<Rational64>,
 
-    /// The current bid price per contract in this position. If the position is long, this should be positive.
+    /// The current bid price per option contract in this position. If the position is long, this should be positive.
     pub unit_bid_price: Option<Rational64>,
 
-    /// The current ask price per contract in this position. If the position is long, this should be positive.
+    /// The current ask price per option contract in this position. If the position is long, this should be positive.
     pub unit_ask_price: Option<Rational64>,
 
-    /// The delta per contract in this position.
+    /// The delta per option contract in this position.
     pub unit_delta: Option<NotNan<f64>>,
 
-    /// The vega per contract in this position.
+    /// The vega per option contract in this position.
     pub unit_vega: Option<NotNan<f64>>,
 
-    /// The theta per contract in this position.
+    /// The theta per option contract in this position.
     pub unit_theta: Option<NotNan<f64>>,
 
-    /// The number of contracts in this position.
+    /// The number of option contracts in this position.
     pub quantity: usize,
 
-    /// The lot size per contract. Defaults to 100 if not defined.
+    /// The strike price of the option.
+    pub strike_price: Rational64,
+
+    /// The type of the option.
+    pub option_type: OptionType,
+
+    /// The expiration date of the option.
+    pub expiration_date: ExpirationDate,
+
+    /// The number of units of the underlying per option contract in this position. Assumed to be 100 if not defined.
     pub lot_size: Option<usize>,
 }
 
@@ -56,73 +186,14 @@ impl OptionPosition {
         )
     }
 
-    pub fn signed_quantity(&self) -> i64 {
-        let q: i64 = self.quantity.try_into().unwrap();
-        if self.is_long {
-            q
-        } else {
-            -q
-        }
-    }
-
-    pub fn cost(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_cost.map(|x| x * q)
-    }
-
-    pub fn net_liq(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_mid_price().map(|x| x * q)
-    }
-
-    pub fn bid_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_bid_price.map(|x| x * q)
-    }
-
-    pub fn ask_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_ask_price.map(|x| x * q)
-    }
-
-    pub fn mid_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity.try_into().unwrap();
-        self.unit_mid_price().map(|x| x * q)
-    }
-
-    pub fn unit_mid_price(&self) -> Option<Rational64> {
-        Some((self.unit_bid_price? + self.unit_ask_price?) / 2)
-    }
-
-    pub fn delta(&self) -> Option<NotNan<f64>> {
-        self.unit_delta.map(|x| x * self.quantity as f64)
-    }
-
-    pub fn vega(&self) -> Option<NotNan<f64>> {
-        self.unit_vega.map(|x| x * self.quantity as f64)
-    }
-
-    pub fn theta(&self) -> Option<NotNan<f64>> {
-        self.unit_theta.map(|x| x * self.quantity as f64)
-    }
-
-    pub fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
-        let lot_size: i64 = self.lot_size.unwrap_or(100).try_into().unwrap();
-
-        let unit_expiry_net_liq = match self.option_type {
-            OptionType::Call => underlying_price - self.strike_price,
-            OptionType::Put => self.strike_price - underlying_price,
-        }
-        .max(Rational64::zero())
-            * if self.is_long { lot_size } else { -lot_size };
-
-        let q: i64 = self.quantity.try_into().unwrap();
-        (self.unit_cost.expect("Undefined cost") + unit_expiry_net_liq) * q
-    }
-
     #[cfg(test)]
-    pub fn mock(option_type: OptionType, strike_price: i64, cost: i64, quantity: usize) -> Self {
-        let is_long = cost < 0;
+    pub fn mock(
+        option_type: OptionType,
+        strike_price: i64,
+        unit_cost: i64,
+        quantity: usize,
+    ) -> Position {
+        let is_long = unit_cost < 0;
         OptionPosition {
             symbol: "OPTION".to_string(),
             underlying_symbol: "ABC".to_string(),
@@ -130,7 +201,7 @@ impl OptionPosition {
             strike_price: Rational64::from_integer(strike_price),
             expiration_date: Default::default(),
             is_long,
-            unit_cost: Some(Rational64::from_integer(cost)),
+            unit_cost: Some(Rational64::from_integer(unit_cost)),
             unit_bid_price: None,
             unit_ask_price: None,
             unit_delta: None,
@@ -139,6 +210,167 @@ impl OptionPosition {
             quantity,
             lot_size: None,
         }
+        .into()
+    }
+}
+
+impl GenericPosition for OptionPosition {
+    fn symbol(&self) -> &str {
+        &self.symbol
+    }
+
+    fn underlying_symbol(&self) -> &str {
+        &self.underlying_symbol
+    }
+
+    fn is_long(&self) -> bool {
+        self.is_long
+    }
+
+    fn unit_cost(&self) -> Option<Rational64> {
+        self.unit_cost
+    }
+
+    fn unit_bid_price(&self) -> Option<Rational64> {
+        self.unit_bid_price
+    }
+
+    fn unit_bid_price_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_bid_price
+    }
+
+    fn unit_ask_price(&self) -> Option<Rational64> {
+        self.unit_ask_price
+    }
+
+    fn unit_ask_price_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_ask_price
+    }
+
+    fn unit_delta(&self) -> Option<NotNan<f64>> {
+        self.unit_delta
+    }
+
+    fn unit_vega(&self) -> Option<NotNan<f64>> {
+        self.unit_vega
+    }
+
+    fn unit_theta(&self) -> Option<NotNan<f64>> {
+        self.unit_theta
+    }
+
+    fn quantity(&self) -> usize {
+        self.quantity
+    }
+
+    fn equivalent_strike_price(&self) -> Rational64 {
+        self.strike_price
+    }
+
+    fn equivalent_option_type(&self) -> OptionType {
+        self.option_type
+    }
+
+    fn equivalent_lot_size(&self) -> usize {
+        self.lot_size.unwrap_or(100)
+    }
+}
+
+pub struct SharePosition {
+    /// The symbol of the stock.
+    pub symbol: String,
+
+    /// Whether the position is long or short the underlying.
+    pub is_long: bool,
+
+    /// The original cost per share in this position. If the position is long, this should be negative.
+    pub unit_cost: Option<Rational64>,
+
+    /// The current bid price per share in this position. If the position is long, this should be positive.
+    pub unit_bid_price: Option<Rational64>,
+
+    /// The current ask price per share in this position. If the position is long, this should be positive.
+    pub unit_ask_price: Option<Rational64>,
+
+    /// The number of shares in this position.
+    pub quantity: usize,
+}
+
+impl SharePosition {
+    #[cfg(test)]
+    pub fn mock(unit_cost: i64, quantity: usize) -> Position {
+        let is_long = unit_cost < 0;
+        SharePosition {
+            symbol: "ABC".to_string(),
+            is_long,
+            unit_cost: Some(Rational64::from_integer(unit_cost)),
+            unit_bid_price: None,
+            unit_ask_price: None,
+            quantity,
+        }
+        .into()
+    }
+}
+
+impl GenericPosition for SharePosition {
+    fn symbol(&self) -> &str {
+        &self.symbol
+    }
+
+    fn underlying_symbol(&self) -> &str {
+        &self.symbol
+    }
+
+    fn is_long(&self) -> bool {
+        self.is_long
+    }
+
+    fn unit_cost(&self) -> Option<Rational64> {
+        self.unit_cost
+    }
+
+    fn unit_bid_price(&self) -> Option<Rational64> {
+        self.unit_bid_price
+    }
+
+    fn unit_bid_price_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_bid_price
+    }
+
+    fn unit_ask_price(&self) -> Option<Rational64> {
+        self.unit_ask_price
+    }
+
+    fn unit_ask_price_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_ask_price
+    }
+
+    fn unit_delta(&self) -> Option<NotNan<f64>> {
+        Some(NotNan::new(if self.is_long { 1.0 } else { -1.0 }).unwrap())
+    }
+
+    fn unit_vega(&self) -> Option<NotNan<f64>> {
+        Some(NotNan::new(0.0).unwrap())
+    }
+
+    fn unit_theta(&self) -> Option<NotNan<f64>> {
+        Some(NotNan::new(0.0).unwrap())
+    }
+
+    fn quantity(&self) -> usize {
+        self.quantity
+    }
+
+    fn equivalent_strike_price(&self) -> Rational64 {
+        Rational64::zero()
+    }
+
+    fn equivalent_option_type(&self) -> OptionType {
+        OptionType::Call
+    }
+
+    fn equivalent_lot_size(&self) -> usize {
+        1
     }
 }
 
@@ -290,35 +522,35 @@ pub struct Breakeven {
 }
 
 // options should be sorted by strike price
-pub fn calculate_breakevens_for_strategy(options: &[OptionPosition]) -> StrategyBreakevens {
-    if options.is_empty() {
+pub fn calculate_breakevens_for_strategy(positions: &[Position]) -> StrategyBreakevens {
+    if positions.is_empty() {
         return StrategyBreakevens { breakevens: vec![] };
     }
 
-    let max_strike_price = options
+    let max_strike_price = positions
         .iter()
-        .map(|option| option.strike_price)
+        .map(|position| position.equivalent_strike_price())
         .max()
         .unwrap();
 
     let profit_at_price = |price| {
-        let profit: Rational64 = options
+        let profit: Rational64 = positions
             .iter()
-            .map(|option| option.profit_at_expiry(price))
+            .map(|position| position.profit_at_expiry(price))
             .sum();
         profit
     };
 
-    let price_range = (Rational64::zero(), max_strike_price * 100);
+    let price_range = (Rational64::zero(), (max_strike_price + 1) * 100);
 
     let mut prev_price = price_range.0;
     let mut prev_profit = profit_at_price(prev_price);
 
     let mut breakevens = vec![];
 
-    for strike_price in options
+    for strike_price in positions
         .iter()
-        .map(|option| option.strike_price)
+        .map(|position| position.equivalent_strike_price())
         .chain(std::iter::once(price_range.1))
     {
         if strike_price == prev_price {
@@ -385,8 +617,8 @@ impl ProfitBound {
     }
 }
 
-pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> StrategyProfitBounds {
-    if options.is_empty() {
+pub fn calculate_profit_bounds_for_strategy(positions: &[Position]) -> StrategyProfitBounds {
+    if positions.is_empty() {
         return StrategyProfitBounds {
             max_loss: None,
             max_profit: None,
@@ -395,21 +627,29 @@ pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> Strat
 
     let mut min_gradient: i64 = 0;
     let mut max_gradient: i64 = 0;
-    for option in options {
-        match (option.option_type, option.is_long) {
-            (OptionType::Call, true) => max_gradient += option.quantity as i64,
-            (OptionType::Call, false) => max_gradient -= option.quantity as i64,
-            (OptionType::Put, true) => min_gradient += option.quantity as i64,
-            (OptionType::Put, false) => min_gradient -= option.quantity as i64,
+    for position in positions {
+        match (position.equivalent_option_type(), position.is_long()) {
+            (OptionType::Call, true) => {
+                max_gradient += (position.quantity() * position.equivalent_lot_size()) as i64
+            }
+            (OptionType::Call, false) => {
+                max_gradient -= (position.quantity() * position.equivalent_lot_size()) as i64
+            }
+            (OptionType::Put, true) => {
+                min_gradient += (position.quantity() * position.equivalent_lot_size()) as i64
+            }
+            (OptionType::Put, false) => {
+                min_gradient -= (position.quantity() * position.equivalent_lot_size()) as i64
+            }
         }
     }
 
     let max_loss_at_strike = {
         let mut max_loss = Rational64::from_integer(i64::MAX);
         let mut max_loss_price = Rational64::zero();
-        for option in options {
-            let price = option.strike_price;
-            let profit_at_price = options.iter().map(|o| o.profit_at_expiry(price)).sum();
+        for position in positions {
+            let price = position.equivalent_strike_price();
+            let profit_at_price = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
             if profit_at_price < max_loss {
                 max_loss = profit_at_price;
                 max_loss_price = price;
@@ -424,9 +664,9 @@ pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> Strat
     let max_profit_at_strike = {
         let mut max_profit = Rational64::from_integer(i64::MIN);
         let mut max_profit_price = Rational64::zero();
-        for option in options {
-            let price = option.strike_price;
-            let profit_at_price = options.iter().map(|o| o.profit_at_expiry(price)).sum();
+        for position in positions {
+            let price = position.equivalent_strike_price();
+            let profit_at_price = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
             if profit_at_price > max_profit {
                 max_profit = profit_at_price;
                 max_profit_price = price;
@@ -442,7 +682,7 @@ pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> Strat
         ProfitBound::Infinite
     } else if min_gradient < 0 {
         let price = Rational64::zero();
-        let profit_at_zero = options.iter().map(|o| o.profit_at_expiry(price)).sum();
+        let profit_at_zero = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
 
         // profit at zero may not necessarily be the extreme
         if max_loss_at_strike.finite_value().unwrap() <= profit_at_zero {
@@ -461,7 +701,7 @@ pub fn calculate_profit_bounds_for_strategy(options: &[OptionPosition]) -> Strat
         ProfitBound::Infinite
     } else if min_gradient > 0 {
         let price = Rational64::zero();
-        let profit_at_zero = options.iter().map(|o| o.profit_at_expiry(price)).sum();
+        let profit_at_zero = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
 
         // profit at zero may not necessarily be the extreme
         if max_profit_at_strike.finite_value().unwrap() >= profit_at_zero {
@@ -862,6 +1102,65 @@ mod tests {
                     value: Rational64::from_integer(max_profit),
                     price: Rational64::from_integer(0)
                 }),
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_profit_for_covered_call() {
+        let positions = [
+            SharePosition::mock(-11, 200),
+            OptionPosition::mock(OptionType::Call, 20, 30, 2),
+        ];
+
+        let profit_bounds = calculate_profit_bounds_for_strategy(&positions);
+
+        let max_loss = -11 * 200 + 30 * 2;
+        let max_profit = (20 - 11) * 200 + 30 * 2;
+        assert_eq!(
+            profit_bounds,
+            StrategyProfitBounds {
+                max_loss: Some(ProfitBound::Finite {
+                    value: Rational64::from_integer(max_loss),
+                    price: Rational64::from_integer(0)
+                }),
+                max_profit: Some(ProfitBound::Finite {
+                    value: Rational64::from_integer(max_profit),
+                    price: Rational64::from_integer(20)
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_breakevens_for_shares() {
+        let positions = [
+            SharePosition::mock(-11, 150), // long
+            SharePosition::mock(19, 50),   // short
+        ];
+        let breakevens = calculate_breakevens_for_strategy(&positions);
+        assert_eq!(
+            breakevens,
+            StrategyBreakevens {
+                breakevens: vec![Breakeven {
+                    price: Rational64::from_integer(7),
+                    is_ascending: true,
+                }]
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_breakevens_for_leap() {
+        let positions = [OptionPosition::mock(OptionType::Call, 1, -30, 1)];
+        let breakevens = calculate_breakevens_for_strategy(&positions);
+        assert_eq!(
+            breakevens,
+            StrategyBreakevens {
+                breakevens: vec![Breakeven {
+                    price: Rational64::new(13, 10),
+                    is_ascending: true,
+                }]
             }
         );
     }
