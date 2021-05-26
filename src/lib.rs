@@ -541,7 +541,13 @@ pub fn calculate_breakevens_for_strategy(positions: &[Position]) -> StrategyBrea
         profit
     };
 
-    let price_range = (Rational64::zero(), (max_strike_price + 1) * 100);
+    // arbitrary scale factor that once applied to the max strike price should exceed the upper breakeven
+    const MARGIN_SCALE_FACTOR: i64 = 1000;
+    let price_range = (
+        Rational64::zero(),
+        // increment by 1 to handle strike price of zero
+        (max_strike_price + 1) * MARGIN_SCALE_FACTOR,
+    );
 
     let mut prev_price = price_range.0;
     let mut prev_profit = profit_at_price(prev_price);
