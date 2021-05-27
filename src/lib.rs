@@ -633,18 +633,21 @@ pub fn calculate_profit_bounds_for_strategy(positions: &[Position]) -> StrategyP
     let mut min_gradient: i64 = 0;
     let mut max_gradient: i64 = 0;
     for position in positions {
+        let gradient_delta: i64 = (position.quantity() * position.equivalent_lot_size())
+            .try_into()
+            .unwrap();
         match (position.equivalent_option_type(), position.is_long()) {
             (OptionType::Call, true) => {
-                max_gradient += (position.quantity() * position.equivalent_lot_size()) as i64
+                max_gradient += gradient_delta;
             }
             (OptionType::Call, false) => {
-                max_gradient -= (position.quantity() * position.equivalent_lot_size()) as i64
+                max_gradient -= gradient_delta;
             }
             (OptionType::Put, true) => {
-                min_gradient += (position.quantity() * position.equivalent_lot_size()) as i64
+                min_gradient += gradient_delta;
             }
             (OptionType::Put, false) => {
-                min_gradient -= (position.quantity() * position.equivalent_lot_size()) as i64
+                min_gradient -= gradient_delta;
             }
         }
     }
@@ -797,8 +800,13 @@ fn calculate_probability_of_expiring_gt_price(
     let stock_price = underlying_price.to_f64()?;
     let expiration_implied_volatility = iv_provider.find_iv_for_expiration_date(expiration_date)?;
 
-    let time = expiration_date.time_to_expiration(now).num_minutes() as f64
-        / Duration::days(365).num_minutes() as f64;
+    let num_minutes: u32 = expiration_date
+        .time_to_expiration(now)
+        .num_minutes()
+        .try_into()
+        .ok()?;
+    let year_minutes: u32 = Duration::days(365).num_minutes().try_into().ok()?;
+    let time = f64::from(num_minutes) / f64::from(year_minutes);
     let vol = expiration_implied_volatility * time.sqrt();
 
     // https://www.ltnielsen.com/wp-content/uploads/Understanding.pdf
