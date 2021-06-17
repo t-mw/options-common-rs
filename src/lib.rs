@@ -10,6 +10,7 @@ use std::fmt;
 use std::str::FromStr;
 
 #[enum_dispatch]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Position {
     OptionPosition,
     SharePosition,
@@ -276,6 +277,7 @@ impl GenericPosition for OptionPosition {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SharePosition {
     /// The symbol of the stock.
     pub symbol: String,
