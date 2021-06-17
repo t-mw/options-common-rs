@@ -70,6 +70,11 @@ pub trait GenericPosition {
         self.unit_cost().map(|x| x * q)
     }
 
+    fn net_liq(&self) -> Option<Rational64> {
+        let q: i64 = self.quantity().try_into().unwrap();
+        self.unit_mid_price().map(|x| x * q)
+    }
+
     /// The total current bid price for all option contracts or shares in this position.
     fn bid_price(&self) -> Option<Rational64> {
         let q: i64 = self.quantity().try_into().unwrap();
