@@ -31,6 +31,7 @@ pub trait GenericPosition {
 
     /// The original cost per option contract or share in this position. If the position is long, this should be negative.
     fn unit_cost(&self) -> Option<Rational64>;
+    fn unit_cost_mut(&mut self) -> &mut Option<Rational64>;
 
     /// The current bid price per option contract or share in this position. If the position is long, this should be positive.
     fn unit_bid_price(&self) -> Option<Rational64>;
@@ -51,6 +52,7 @@ pub trait GenericPosition {
 
     /// The number of option contracts or shares in this position.
     fn quantity(&self) -> usize;
+    fn quantity_mut(&mut self) -> &mut usize;
 
     /// Equal to [`Self::quantity()`], but negative if the position is short.
     fn signed_quantity(&self) -> i64 {
@@ -232,6 +234,10 @@ impl GenericPosition for OptionPosition {
         self.unit_cost
     }
 
+    fn unit_cost_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_cost
+    }
+
     fn unit_bid_price(&self) -> Option<Rational64> {
         self.unit_bid_price
     }
@@ -262,6 +268,10 @@ impl GenericPosition for OptionPosition {
 
     fn quantity(&self) -> usize {
         self.quantity
+    }
+
+    fn quantity_mut(&mut self) -> &mut usize {
+        &mut self.quantity
     }
 
     fn equivalent_strike_price(&self) -> Rational64 {
@@ -331,6 +341,10 @@ impl GenericPosition for SharePosition {
         self.unit_cost
     }
 
+    fn unit_cost_mut(&mut self) -> &mut Option<Rational64> {
+        &mut self.unit_cost
+    }
+
     fn unit_bid_price(&self) -> Option<Rational64> {
         self.unit_bid_price
     }
@@ -361,6 +375,10 @@ impl GenericPosition for SharePosition {
 
     fn quantity(&self) -> usize {
         self.quantity
+    }
+
+    fn quantity_mut(&mut self) -> &mut usize {
+        &mut self.quantity
     }
 
     fn equivalent_strike_price(&self) -> Rational64 {
