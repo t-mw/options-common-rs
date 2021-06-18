@@ -9,6 +9,8 @@ use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
 
+const SHARE_UNIT_DELTA: f64 = 0.01;
+
 #[enum_dispatch]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Position {
@@ -41,7 +43,7 @@ pub trait GenericPosition {
     fn unit_ask_price(&self) -> Option<Rational64>;
     fn unit_ask_price_mut(&mut self) -> &mut Option<Rational64>;
 
-    /// The delta per option contract or share in this position.
+    /// The delta per option contract or share in this position, where the delta equivalent of 1 share == 0.01.
     fn unit_delta(&self) -> Option<NotNan<f64>>;
 
     /// The vega per option contract or share in this position.
@@ -98,7 +100,7 @@ pub trait GenericPosition {
         Some((self.unit_bid_price()? + self.unit_ask_price()?) / 2)
     }
 
-    /// The total delta for all option contracts or shares in this position.
+    /// The total delta for all option contracts or shares in this position, where the delta equivalent of 1 share == 0.01.
     fn delta(&self) -> Option<NotNan<f64>> {
         self.unit_delta().map(|x| x * self.quantity() as f64)
     }
@@ -159,7 +161,7 @@ pub struct OptionsPosition {
     /// The current ask price per option contract in this position. If the position is long, this should be positive.
     pub unit_ask_price: Option<Rational64>,
 
-    /// The delta per option contract in this position.
+    /// The delta per option contract in this position, where the delta equivalent of 1 share == 0.01.
     pub unit_delta: Option<NotNan<f64>>,
 
     /// The vega per option contract in this position.
@@ -367,7 +369,14 @@ impl GenericPosition for SharesPosition {
     }
 
     fn unit_delta(&self) -> Option<NotNan<f64>> {
-        Some(NotNan::new(if self.is_long { 1.0 } else { -1.0 }).unwrap())
+        Some(
+            NotNan::new(if self.is_long {
+                SHARE_UNIT_DELTA
+            } else {
+                -SHARE_UNIT_DELTA
+            })
+            .unwrap(),
+        )
     }
 
     fn unit_vega(&self) -> Option<NotNan<f64>> {
