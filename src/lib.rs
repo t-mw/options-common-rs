@@ -53,46 +53,40 @@ pub trait GenericPosition {
     fn unit_theta(&self) -> Option<NotNan<f64>>;
 
     /// The number of option contracts or shares in this position.
-    fn quantity(&self) -> usize;
-    fn quantity_mut(&mut self) -> &mut usize;
+    fn quantity(&self) -> Rational64;
+    fn quantity_mut(&mut self) -> &mut Rational64;
 
     /// Equal to [`Self::quantity()`], but negative if the position is short.
-    fn signed_quantity(&self) -> i64 {
-        let q: i64 = self.quantity().try_into().unwrap();
+    fn signed_quantity(&self) -> Rational64 {
         if self.is_long() {
-            q
+            self.quantity()
         } else {
-            -q
+            -self.quantity()
         }
     }
 
     /// The total original cost of all option contracts or shares in this position.
     fn cost(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity().try_into().unwrap();
-        self.unit_cost().map(|x| x * q)
+        self.unit_cost().map(|x| x * self.quantity())
     }
 
     fn net_liq(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity().try_into().unwrap();
-        self.unit_mid_price().map(|x| x * q)
+        self.unit_mid_price().map(|x| x * self.quantity())
     }
 
     /// The total current bid price for all option contracts or shares in this position.
     fn bid_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity().try_into().unwrap();
-        self.unit_bid_price().map(|x| x * q)
+        self.unit_bid_price().map(|x| x * self.quantity())
     }
 
     /// The total current ask price for all option contracts or shares in this position.
     fn ask_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity().try_into().unwrap();
-        self.unit_ask_price().map(|x| x * q)
+        self.unit_ask_price().map(|x| x * self.quantity())
     }
 
     /// The total current mid price for all option contracts or shares in this position.
     fn mid_price(&self) -> Option<Rational64> {
-        let q: i64 = self.quantity().try_into().unwrap();
-        self.unit_mid_price().map(|x| x * q)
+        self.unit_mid_price().map(|x| x * self.quantity())
     }
 
     /// The current mid price per option contract or share in this position. If the position is long, this will be positive.
@@ -102,17 +96,17 @@ pub trait GenericPosition {
 
     /// The total delta for all option contracts or shares in this position, where the delta equivalent of 1 share == 0.01.
     fn delta(&self) -> Option<NotNan<f64>> {
-        self.unit_delta().map(|x| x * self.quantity() as f64)
+        Some(self.unit_delta()? * self.quantity().to_f64()?)
     }
 
     /// The total vega for all option contracts or shares in this position.
     fn vega(&self) -> Option<NotNan<f64>> {
-        self.unit_vega().map(|x| x * self.quantity() as f64)
+        Some(self.unit_vega()? * self.quantity().to_f64()?)
     }
 
     /// The total theta for all option contracts or shares in this position.
     fn theta(&self) -> Option<NotNan<f64>> {
-        self.unit_theta().map(|x| x * self.quantity() as f64)
+        Some(self.unit_theta()? * self.quantity().to_f64()?)
     }
 
     /// For an option position, the strike price of the option. For a share position, the strike
@@ -124,7 +118,7 @@ pub trait GenericPosition {
 
     /// For an option position, the number of units of the underlying per option contract. For a
     /// share position, equal to 1.
-    fn equivalent_lot_size(&self) -> usize;
+    fn equivalent_lot_size(&self) -> i64;
 
     fn profit_at_expiry(&self, underlying_price: Rational64) -> Rational64 {
         let lot_size: i64 = self.equivalent_lot_size().try_into().unwrap();
@@ -136,8 +130,7 @@ pub trait GenericPosition {
         .max(Rational64::zero())
             * if self.is_long() { lot_size } else { -lot_size };
 
-        let q: i64 = self.quantity().try_into().unwrap();
-        (self.unit_cost().expect("Undefined cost") + unit_expiry_net_liq) * q
+        (self.unit_cost().expect("Undefined cost") + unit_expiry_net_liq) * self.quantity()
     }
 }
 
@@ -171,7 +164,7 @@ pub struct OptionsPosition {
     pub unit_theta: Option<NotNan<f64>>,
 
     /// The number of option contracts in this position.
-    pub quantity: usize,
+    pub quantity: Rational64,
 
     /// The strike price of the option.
     pub strike_price: Rational64,
@@ -183,7 +176,7 @@ pub struct OptionsPosition {
     pub expiration_date: ExpirationDate,
 
     /// The number of units of the underlying per option contract in this position. Assumed to be 100 if not defined.
-    pub lot_size: Option<usize>,
+    pub lot_size: Option<i64>,
 }
 
 impl OptionsPosition {
@@ -201,7 +194,7 @@ impl OptionsPosition {
         option_type: OptionType,
         strike_price: i64,
         unit_cost: i64,
-        quantity: usize,
+        quantity: Rational64,
     ) -> Position {
         let is_long = unit_cost < 0;
         OptionsPosition {
@@ -273,11 +266,11 @@ impl GenericPosition for OptionsPosition {
         self.unit_theta
     }
 
-    fn quantity(&self) -> usize {
+    fn quantity(&self) -> Rational64 {
         self.quantity
     }
 
-    fn quantity_mut(&mut self) -> &mut usize {
+    fn quantity_mut(&mut self) -> &mut Rational64 {
         &mut self.quantity
     }
 
@@ -289,7 +282,7 @@ impl GenericPosition for OptionsPosition {
         self.option_type
     }
 
-    fn equivalent_lot_size(&self) -> usize {
+    fn equivalent_lot_size(&self) -> i64 {
         self.lot_size.unwrap_or(100)
     }
 }
@@ -312,12 +305,12 @@ pub struct SharesPosition {
     pub unit_ask_price: Option<Rational64>,
 
     /// The number of shares in this position.
-    pub quantity: usize,
+    pub quantity: Rational64,
 }
 
 impl SharesPosition {
     #[cfg(test)]
-    pub fn mock(unit_cost: i64, quantity: usize) -> Position {
+    pub fn mock(unit_cost: i64, quantity: Rational64) -> Position {
         let is_long = unit_cost < 0;
         SharesPosition {
             symbol: "ABC".to_string(),
@@ -387,11 +380,11 @@ impl GenericPosition for SharesPosition {
         Some(NotNan::new(0.0).unwrap())
     }
 
-    fn quantity(&self) -> usize {
+    fn quantity(&self) -> Rational64 {
         self.quantity
     }
 
-    fn quantity_mut(&mut self) -> &mut usize {
+    fn quantity_mut(&mut self) -> &mut Rational64 {
         &mut self.quantity
     }
 
@@ -403,7 +396,7 @@ impl GenericPosition for SharesPosition {
         OptionType::Call
     }
 
-    fn equivalent_lot_size(&self) -> usize {
+    fn equivalent_lot_size(&self) -> i64 {
         1
     }
 }
@@ -664,12 +657,10 @@ pub fn calculate_profit_bounds_for_strategy(positions: &[Position]) -> StrategyP
         };
     }
 
-    let mut min_gradient: i64 = 0;
-    let mut max_gradient: i64 = 0;
+    let mut min_gradient = Rational64::zero();
+    let mut max_gradient = Rational64::zero();
     for position in positions {
-        let gradient_delta: i64 = (position.quantity() * position.equivalent_lot_size())
-            .try_into()
-            .unwrap();
+        let gradient_delta = position.quantity() * position.equivalent_lot_size();
         match (position.equivalent_option_type(), position.is_long()) {
             (OptionType::Call, true) => {
                 max_gradient += gradient_delta;
@@ -720,9 +711,9 @@ pub fn calculate_profit_bounds_for_strategy(positions: &[Position]) -> StrategyP
         }
     };
 
-    let max_loss = if max_gradient < 0 {
+    let max_loss = if max_gradient.is_negative() {
         ProfitBound::Infinite
-    } else if min_gradient < 0 {
+    } else if min_gradient.is_negative() {
         let price = Rational64::zero();
         let profit_at_zero = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
 
@@ -739,9 +730,9 @@ pub fn calculate_profit_bounds_for_strategy(positions: &[Position]) -> StrategyP
         max_loss_at_strike
     };
 
-    let max_profit = if max_gradient > 0 {
+    let max_profit = if max_gradient.is_positive() {
         ProfitBound::Infinite
-    } else if min_gradient > 0 {
+    } else if min_gradient.is_positive() {
         let price = Rational64::zero();
         let profit_at_zero = positions.iter().map(|o| o.profit_at_expiry(price)).sum();
 
@@ -954,7 +945,7 @@ mod tests {
 
     #[test]
     fn test_short_call_profit_at_expiry() {
-        let option = OptionsPosition::mock(OptionType::Call, 100, 300, 1);
+        let option = OptionsPosition::mock(OptionType::Call, 100, 300, 1.into());
         let underlying_price = Rational64::from_integer(101);
         let profit = option.profit_at_expiry(underlying_price);
 
@@ -963,7 +954,7 @@ mod tests {
 
     #[test]
     fn test_short_put_profit_at_expiry() {
-        let option = OptionsPosition::mock(OptionType::Put, 100, 300, 1);
+        let option = OptionsPosition::mock(OptionType::Put, 100, 300, 1.into());
         let underlying_price = Rational64::from_integer(99);
         let profit = option.profit_at_expiry(underlying_price);
 
@@ -972,7 +963,7 @@ mod tests {
 
     #[test]
     fn test_long_put_profit_at_expiry() {
-        let option = OptionsPosition::mock(OptionType::Put, 100, -300, 1);
+        let option = OptionsPosition::mock(OptionType::Put, 100, -300, 1.into());
         let underlying_price = Rational64::from_integer(99);
         let profit = option.profit_at_expiry(underlying_price);
 
@@ -982,8 +973,8 @@ mod tests {
     #[test]
     fn test_calculate_breakevens_for_short_strangle() {
         let options = [
-            OptionsPosition::mock(OptionType::Put, 20, 37, 1),
-            OptionsPosition::mock(OptionType::Call, 28, 74, 1),
+            OptionsPosition::mock(OptionType::Put, 20, 37, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 28, 74, 1.into()),
         ];
 
         let breakevens = calculate_breakevens_for_strategy(&options);
@@ -1008,8 +999,8 @@ mod tests {
     #[test]
     fn test_calculate_breakevens_for_short_call_ratio_spread() {
         let options = [
-            OptionsPosition::mock(OptionType::Call, 15, -305, 1),
-            OptionsPosition::mock(OptionType::Call, 20, 217, 2),
+            OptionsPosition::mock(OptionType::Call, 15, -305, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 20, 217, 2.into()),
         ];
 
         let breakevens = calculate_breakevens_for_strategy(&options);
@@ -1027,7 +1018,7 @@ mod tests {
 
     #[test]
     fn test_calculate_profit_for_long_call() {
-        let options = [OptionsPosition::mock(OptionType::Call, 20, -37, 1)];
+        let options = [OptionsPosition::mock(OptionType::Call, 20, -37, 1.into())];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
@@ -1045,7 +1036,7 @@ mod tests {
 
     #[test]
     fn test_calculate_profit_for_long_put() {
-        let options = [OptionsPosition::mock(OptionType::Put, 20, -37, 1)];
+        let options = [OptionsPosition::mock(OptionType::Put, 20, -37, 1.into())];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
 
@@ -1067,8 +1058,8 @@ mod tests {
     #[test]
     fn test_calculate_profit_for_short_strangle() {
         let options = [
-            OptionsPosition::mock(OptionType::Put, 20, 37, 1),
-            OptionsPosition::mock(OptionType::Call, 28, 74, 1),
+            OptionsPosition::mock(OptionType::Put, 20, 37, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 28, 74, 1.into()),
         ];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
@@ -1088,8 +1079,8 @@ mod tests {
     #[test]
     fn test_calculate_profit_for_long_strangle() {
         let options = [
-            OptionsPosition::mock(OptionType::Put, 20, -37, 1),
-            OptionsPosition::mock(OptionType::Call, 28, -74, 1),
+            OptionsPosition::mock(OptionType::Put, 20, -37, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 28, -74, 1.into()),
         ];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
@@ -1109,8 +1100,8 @@ mod tests {
     #[test]
     fn test_calculate_profit_for_short_call_ratio_spread() {
         let options = [
-            OptionsPosition::mock(OptionType::Call, 15, -305, 1),
-            OptionsPosition::mock(OptionType::Call, 20, 217, 2),
+            OptionsPosition::mock(OptionType::Call, 15, -305, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 20, 217, 2.into()),
         ];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
@@ -1130,8 +1121,8 @@ mod tests {
     #[test]
     fn test_calculate_profit_for_long_put_ratio_spread() {
         let options = [
-            OptionsPosition::mock(OptionType::Put, 20, 305, 1),
-            OptionsPosition::mock(OptionType::Put, 15, -217, 2),
+            OptionsPosition::mock(OptionType::Put, 20, 305, 1.into()),
+            OptionsPosition::mock(OptionType::Put, 15, -217, 2.into()),
         ];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&options);
@@ -1156,8 +1147,8 @@ mod tests {
     #[test]
     fn test_calculate_profit_for_covered_call() {
         let positions = [
-            SharesPosition::mock(-11, 200),
-            OptionsPosition::mock(OptionType::Call, 20, 30, 2),
+            SharesPosition::mock(-11, 200.into()),
+            OptionsPosition::mock(OptionType::Call, 20, 30, 2.into()),
         ];
 
         let profit_bounds = calculate_profit_bounds_for_strategy(&positions);
@@ -1182,8 +1173,8 @@ mod tests {
     #[test]
     fn test_calculate_breakevens_for_shares() {
         let positions = [
-            SharesPosition::mock(-11, 150), // long
-            SharesPosition::mock(19, 50),   // short
+            SharesPosition::mock(-11, 150.into()), // long
+            SharesPosition::mock(19, 50.into()),   // short
         ];
         let breakevens = calculate_breakevens_for_strategy(&positions);
         assert_eq!(
@@ -1199,7 +1190,7 @@ mod tests {
 
     #[test]
     fn test_calculate_breakevens_for_leap() {
-        let positions = [OptionsPosition::mock(OptionType::Call, 1, -30, 1)];
+        let positions = [OptionsPosition::mock(OptionType::Call, 1, -30, 1.into())];
         let breakevens = calculate_breakevens_for_strategy(&positions);
         assert_eq!(
             breakevens,
@@ -1238,10 +1229,10 @@ mod tests {
     #[test]
     fn test_calculate_pop_multiple_breakevens() {
         let option_positions = [
-            OptionsPosition::mock(OptionType::Put, 20, -55, 2),
-            OptionsPosition::mock(OptionType::Put, 30, 277, 1),
-            OptionsPosition::mock(OptionType::Call, 60, -823, 1),
-            OptionsPosition::mock(OptionType::Call, 85, 456, 2),
+            OptionsPosition::mock(OptionType::Put, 20, -55, 2.into()),
+            OptionsPosition::mock(OptionType::Put, 30, 277, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 60, -823, 1.into()),
+            OptionsPosition::mock(OptionType::Call, 85, 456, 2.into()),
         ];
 
         let breakevens = calculate_breakevens_for_strategy(&option_positions);
